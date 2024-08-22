@@ -1,0 +1,101 @@
+stages:
+  - style
+  - build
+  - test
+  - deploy
+
+style-test-job:
+  stage: style
+  tags:
+    - codestyle
+  script:
+    - cd src
+    - find . -type f | grep "\.(c|h)$" -E | xargs clang-format -n -verbose --Werror --style=Google
+  after_script:
+    - bash src/bot.sh
+  when: on_success
+
+build-job:
+  stage: build
+  tags:
+    - build
+  script:
+    - cd src/cat
+    - if make s21_cat; then
+        echo "✅ s21_cat built successfully.";
+      else
+        echo "❌ s21_cat built failed.";
+        exit 1;
+      fi
+    - cd ../grep
+    - if make s21_grep; then
+        echo "✅ s21_grep built successfully.";
+      else
+        echo "❌ s21_grep built failed.";
+        exit 1;
+      fi
+  after_script:
+    - bash src/bot.sh
+  when: on_success
+  artifacts:
+    paths:
+      - src/cat/s21_cat
+      - src/grep/s21_grep
+    expire_in: 30 days
+
+func-test-job:
+  stage: test
+  tags:
+    - test
+  script:
+    - cd src/cat
+    - if bash tests.sh; then
+        echo "✅ Tests for s21_cat built successfully!";
+      else 
+        echo "❌ Ooops! Tests for s21_cat failed!";
+        exit 1;
+      fi
+    - if bash mytests.sh; then
+        echo "✅ The 2nd part of the tests for s21_cat built successfully!";
+      else 
+        echo "❌ Ooops! The 2nd part of the tests for s21_cat failed!";
+        exit 1;
+      fi
+    - cd ../grep
+    - if bash tests.sh; then
+        echo "✅ Tests for s21_grep built successfully!";
+      else 
+        echo "❌ Ooops! Tests for s21_grep failed!";
+        exit 1;
+      fi
+    - if bash diffgrep.sh; then
+        echo "✅ The 2nd part of the tests for s21_grep built successfully!";
+      else 
+        echo "❌ Ooops! The 2nd part of the tests for s21_cat failed!";
+        exit 1;
+      fi
+  after_script:
+    - bash src/bot.sh
+  allow_failure: false
+
+deploy-job:
+  stage: deploy
+  tags:
+    - deploy
+  when: manual
+  allow_failure: false
+  script:
+    - if scp src/cat/s21_cat src/grep/s21_grep den@192.168.100.11:~/builds; then
+        echo "✅ Files successfully copied to remote server.";
+      else
+        echo "❌ Failed to copy files to remote server.";
+        exit 1;
+      fi
+    - if ssh den@192.168.100.11 'sudo ~/build.sh'; then
+        echo "✅ Remote build script executed successfully.";
+      else
+        echo "❌ Failed to execute remote build script.";
+        exit 1;
+      fi
+  after_script:
+    - bash src/bot.sh
